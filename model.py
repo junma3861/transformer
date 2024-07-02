@@ -190,6 +190,56 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(self.w_1(x).relu()))
 
 
+class Embedding(nn.Module):
+    def __init__(self, d_model, vocab):
+        super(Embedding, self).__init__()
+        self.lut = nn.Embedding(vocab, d_model)
+        self.d_model = d_model
+
+    def forward(self, x):
+        return self.lut(x) * math.sqrt(self.d_model)
+
+
+class PositionEncoding(nn.Module):
+
+    def __init__(self, d_model, dropout, max_len=5000):
+        super(PositionEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[:, : x.size(1)].requires_grad_(False)
+        return self.dropout(x)
+
+
+def make_model(
+        src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0.1
+):
+    c = copy.deepcopy
+    attn = MultiHeadedAttention(h, d_model)
+    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+    position = PositionEncoding(d_model, dropout)
+    model = EncoderDecoder(
+        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+        Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+        nn.Sequential(Embedding(d_model, src_vocab), c(position)),
+        nn.Sequential(Embedding(d_model, tgt_vocab), c(position))
+    )
+
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform(6)
+
+    return model
+
 
 
 
